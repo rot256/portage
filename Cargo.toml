@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 openssl = "0.10.25"
+reed-solomon-erasure = "4.0.1"
