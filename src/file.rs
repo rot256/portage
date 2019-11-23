@@ -3,11 +3,12 @@ use std::mem;
 use super::misc::expand;
 use super::File;
 use openssl::bn::BigNum;
+use openssl::rand::rand_bytes;
 
 const FDH_ROUNDS: usize = 3;
 
 use super::Shard;
-use super::{HALF_SIZE_BYTES, MESSAGE_SIZE_BYTES};
+use super::SHARD_SIZE;
 
 fn fdh(data: Vec<u8>, rounds: usize, reverse: bool) -> Vec<u8> {
     // split into left/right
@@ -34,59 +35,56 @@ fn fdh(data: Vec<u8>, rounds: usize, reverse: bool) -> Vec<u8> {
 
 impl File {
     pub fn new(data: &[u8]) -> File {
-        // pad and extend to multiple of chunk size
-
+        let length = data.len();
         let mut data = data.to_owned();
-        data.push(0x1);
-        while data.len() % MESSAGE_SIZE_BYTES != 0 {
+
+        /*
+        // append randomness
+
+        let mut rand = [0u8; 16];
+
+        rand_bytes(&mut rand).unwrap();
+        data.extend(&rand[..]);
+        */
+
+        // extend to multiple of shard size
+
+        while data.len() % SHARD_SIZE != 0 {
             data.push(0x0);
         }
-        assert_eq!(data.len() % MESSAGE_SIZE_BYTES, 0);
+        assert_eq!(data.len() % SHARD_SIZE, 0);
 
         // full-domain hashing
 
         let data = fdh(data, FDH_ROUNDS, false);
-        assert_eq!(data.len() % MESSAGE_SIZE_BYTES, 0);
 
-        // split into 512 byte chunks
+        // split into fixed-sized shards
 
-        let num_shards = data.len() / MESSAGE_SIZE_BYTES;
+        let num_shards = data.len() / SHARD_SIZE;
         let mut shards = Vec::with_capacity(num_shards);
         assert!(num_shards < 1 << 16);
 
         for idx in 0..num_shards {
-            let l = idx * MESSAGE_SIZE_BYTES;
-            let m = l + HALF_SIZE_BYTES;
-            let r = m + HALF_SIZE_BYTES;
-            let s0 = BigNum::from_slice(&data[l..m]).unwrap();
-            let s1 = BigNum::from_slice(&data[m..r]).unwrap();
-            shards.push(Shard {
-                idx: idx as u16,
-                s: [s0, s1],
-            })
+            let l = idx * SHARD_SIZE;
+            let r = l + SHARD_SIZE;
+            shards.push(Shard::new(idx as u16, &data[l..r]));
         }
 
-        File { shards }
+        File { length, shards }
     }
 
     pub fn unpack(&self) -> Vec<u8> {
         // join all states
 
-        let mut data = Vec::with_capacity(self.shards.len() * MESSAGE_SIZE_BYTES);
-
+        let mut data = Vec::with_capacity(self.shards.len() * SHARD_SIZE);
         for st in &self.shards {
-            data.extend(st.s[0].to_vec());
-            data.extend(st.s[1].to_vec());
+            data.extend(st.unpack());
         }
 
         // apply full domain hashing
 
         let mut data = fdh(data, FDH_ROUNDS, true);
-
-        // remove padding
-
-        while let Some(0) = data.pop() {}
-
+        data.truncate(self.length);
         data
     }
 }

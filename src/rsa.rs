@@ -5,8 +5,8 @@ use openssl::bn::{BigNum, BigNumContext, BigNumContextRef};
 use openssl::error::ErrorStack;
 
 use super::misc::expand;
-use super::Shard;
 use super::PRIME_SIZE;
+use super::{EncodeBlock, EncodedShard};
 
 /* e = 3 is fixed */
 pub struct EncodingKey {
@@ -15,16 +15,13 @@ pub struct EncodingKey {
     d: BigNum,
 }
 
+// impl ordering
 pub struct DecodingKey {
     ctx: BigNumContext,
     n: BigNum,
 }
 
-pub struct File {
-    length: usize, // length in shards
-}
-
-impl Shard {
+impl EncodeBlock {
     // rounds of encoding (trapdoor application)
     const ROUNDS: u32 = 2;
 
@@ -201,10 +198,10 @@ impl EncodingKey {
         EncodingKey { ctx, n, d }
     }
 
-    pub fn encode(&mut self, s: Shard) -> Shard {
-        let mut s = s;
-        s.encode(&mut self.ctx, &self.n, &self.d).unwrap();
-        s
+    pub fn encode(&mut self, s: &mut EncodedShard) {
+        for block in s.blocks.iter_mut() {
+            block.encode(&mut self.ctx, &self.n, &self.d).unwrap();
+        }
     }
 
     pub fn decoding(&self) -> DecodingKey {
@@ -246,10 +243,10 @@ impl EncodingKey {
 }
 
 impl DecodingKey {
-    pub fn decode(&mut self, s: Shard) -> Shard {
-        let mut s = s;
-        s.decode(&mut self.ctx, &self.n).unwrap();
-        s
+    pub fn decode(&mut self, s: &mut EncodedShard) {
+        for block in s.blocks.iter_mut() {
+            block.decode(&mut self.ctx, &self.n).unwrap();
+        }
     }
 
     pub fn serialize(&self) -> Vec<u8> {
