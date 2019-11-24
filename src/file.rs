@@ -2,8 +2,6 @@ use std::mem;
 
 use super::misc::expand;
 use super::File;
-use openssl::bn::BigNum;
-use openssl::rand::rand_bytes;
 
 const FDH_ROUNDS: usize = 3;
 

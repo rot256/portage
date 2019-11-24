@@ -40,7 +40,7 @@ impl FromIterator<[u8; 2]> for Shard {
 }
 
 impl File {
-    pub fn reconstruct(&self, header: &Header, shards: &[Shard]) -> Result<Self, ()> {
+    pub fn reconstruct(header: &Header, shards: &[Shard]) -> Result<Self, ()> {
         // check that sufficient data to reconstruct
         let dimension = header.shards();
         if dimension > shards.len() {
@@ -91,21 +91,24 @@ impl File {
         let dimension = header.shards();
 
         // create codeword buffer
-        let mut code = Vec::with_capacity(expansion);
-        for i in 0..code.len() {
+        let code_len = dimension + expansion;
+        let mut code = Vec::with_capacity(code_len);
+        for i in 0..code_len {
             if i < dimension {
-                code[i] = self.shards[i].clone();
+                code.push(self.shards[i].clone());
             } else {
-                code[i] = Shard {
-                    idx: Default::default(),
+                code.push(Shard {
+                    idx: i as u16,
                     coords: [Default::default(); SHARD_ELEMS],
-                };
+                });
             }
         }
 
-        // otherwise use RS coding to extend and create new shards
-        let rs: ReedSolomon<Field> = ReedSolomon::new(dimension, expansion).unwrap();
-        rs.encode(&mut code).unwrap();
+        // use RS coding to extend and create new shards
+        if expansion > 0 {
+            let rs: ReedSolomon<Field> = ReedSolomon::new(dimension, expansion).unwrap();
+            rs.encode(&mut code).unwrap();
+        }
         (header, code)
     }
 }

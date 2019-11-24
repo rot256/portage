@@ -7,6 +7,9 @@ mod misc;
 mod rs;
 mod rsa;
 
+#[cfg(test)]
+mod tests;
+
 use openssl::bn::BigNum;
 use std::fmt;
 use std::mem::MaybeUninit;
@@ -14,18 +17,17 @@ use std::mem::MaybeUninit;
 pub use rsa::{DecodingKey, EncodingKey};
 
 // group size
-const PRIME_SIZE: usize = 1025;
+const PRIME_SIZE: usize = 1023;
 const MODULUS_SIZE: usize = 2 * PRIME_SIZE;
 
 // message always slightly smaller to ensure that it is contained
-const BLOCK_HALF_SIZE: usize = 2048;
-const BLOCK_HALF_SIZE_BYTES: usize = BLOCK_HALF_SIZE / 8;
+const BLOCK_HALF_SIZE_BITS: usize = 8 * (MODULUS_SIZE / 8);
+const BLOCK_HALF_SIZE: usize = BLOCK_HALF_SIZE_BITS / 8;
 const BLOCK_SIZE: usize = 2 * BLOCK_HALF_SIZE;
-const BLOCK_SIZE_BYTES: usize = 2 * BLOCK_HALF_SIZE_BYTES;
 
-const BLOCKS_PER_SHARD: usize = 2;
-const SHARD_SIZE: usize = BLOCKS_PER_SHARD * BLOCK_SIZE_BYTES;
-const SHARD_ELEMS: usize = SHARD_SIZE / 2;
+const SHARD_SIZE: usize = 1024; // each shard is 1KB
+const SHARD_ELEMS: usize = SHARD_SIZE / 2; // shard elements are GF(2^16)
+const SHARD_BLOCKS: usize = SHARD_SIZE / BLOCK_SIZE;
 
 #[derive(Copy, Clone)]
 pub struct Shard {
@@ -49,7 +51,7 @@ impl Default for EncodeBlock {
 #[derive(Debug, Clone)]
 pub struct EncodedShard {
     pub(crate) idx: u16,
-    pub(crate) blocks: [EncodeBlock; BLOCKS_PER_SHARD],
+    pub(crate) blocks: [EncodeBlock; SHARD_BLOCKS],
 }
 
 #[derive(Debug)]
@@ -58,7 +60,6 @@ pub struct File {
     pub(crate) shards: Vec<Shard>,
 }
 
-#[derive(Debug)]
 pub struct Header {
     pub(crate) length: usize, // length of file
 }
@@ -72,6 +73,17 @@ impl Header {
         } else {
             n
         }
+    }
+}
+
+impl fmt::Debug for Header {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Header {{ length = {}, data-shards (dimension) = {} }}",
+            self.length,
+            self.shards()
+        )
     }
 }
 
@@ -97,19 +109,19 @@ impl Shard {
         bytes
     }
 
-    pub(crate) fn encode(&self) -> EncodedShard {
+    pub fn pack(&self) -> EncodedShard {
         // unpack GF(2^16) elements to bytes
         let bytes = self.unpack();
 
         // split into encode blocks
-        let mut blocks: [EncodeBlock; BLOCKS_PER_SHARD] =
+        let mut blocks: [EncodeBlock; SHARD_BLOCKS] =
             unsafe { MaybeUninit::zeroed().assume_init() };
 
-        for i in 0..BLOCKS_PER_SHARD {
+        for i in 0..SHARD_BLOCKS {
             // calculate byte ranges for block
-            let l = i * BLOCK_SIZE_BYTES;
-            let m = l + BLOCK_HALF_SIZE_BYTES;
-            let r = (i + 1) * BLOCK_SIZE_BYTES;
+            let l = i * BLOCK_SIZE;
+            let m = l + BLOCK_HALF_SIZE;
+            let r = (i + 1) * BLOCK_SIZE;
 
             // pack bytes into bignum integers
             let s0 = BigNum::from_slice(&bytes[l..m]).unwrap();
@@ -125,19 +137,19 @@ impl Shard {
 }
 
 impl EncodedShard {
-    pub(crate) fn unpack(&self) -> Shard {
+    pub fn unpack(&self) -> Shard {
         let mut bytes = Vec::with_capacity(SHARD_SIZE);
         let mut push = |n: &BigNum| {
             let bs = n.to_vec();
-            for _ in bs.len()..BLOCK_HALF_SIZE_BYTES {
+            for _ in bs.len()..BLOCK_HALF_SIZE {
                 bytes.push(0x0);
             }
             bytes.extend(&bs[..]);
-            debug_assert_eq!(bytes.len() % BLOCK_HALF_SIZE_BYTES, 0);
+            debug_assert_eq!(bytes.len() % BLOCK_HALF_SIZE, 0);
         };
 
         // unpack bignum integer to bytes
-        for i in 0..BLOCKS_PER_SHARD {
+        for i in 0..SHARD_BLOCKS {
             push(&self.blocks[i].s[0]);
             push(&self.blocks[i].s[1]);
         }
