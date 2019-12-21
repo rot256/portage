@@ -1,5 +1,7 @@
 <img src="icon.png" align="right" height="300" width="300"/>
 
+![CI Status](https://github.com/rot256/portage/workflows/Rust/badge.svg)
+
 # Portage
 
 Portage is a Proof-of-Concept implementation of a replica encoding scheme without timing assumptions, combined with erasure encoding (Reed-Solomon codes).
