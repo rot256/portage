@@ -123,7 +123,12 @@ assert_eq!(&original[..], &recover[..]);
 
 ## Benchmark
 
-Encoding is quite slow, however decoding is reasonably fast:
+Encoding is quite slow, however decoding is reasonably fast (e.g. usable for browsing).
+The following figures is the time to encode / decode 1KB of data on a single core of an i7 2600k (an older CPU):
 
+```
+test tests::decode ... bench:     440,176 ns/iter (+/- 1,578)
+test tests::encode ... bench:  59,044,919 ns/iter (+/- 6,334,297)
+```
 
-
+Which translates to around 80 KB/s for encoding and 9 MB/s for decoding across 4 cores.
