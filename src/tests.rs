@@ -6,10 +6,9 @@ use super::*;
 #[bench]
 fn encode(b: &mut Bencher) {
     let mut sk = EncodingKey::new();
-    let mut bytes1 = Vec::with_capacity(1024);
-    bytes1.resize(bytes1.capacity(), 0u8);
+    let bytes = vec![0; 1024];
 
-    let file = File::new(&bytes1[..]);
+    let file = File::new(&bytes[..]);
     let (_, shards) = file.shards(0);
 
     let mut enc: Vec<EncodedShard> = shards.into_iter().map(|s| s.pack()).collect();
@@ -24,11 +23,10 @@ fn encode(b: &mut Bencher) {
 #[bench]
 fn decode(b: &mut Bencher) {
     let sk = EncodingKey::new();
+    let bytes = vec![0; 1024];
     let mut pk = sk.decoding();
-    let mut bytes1 = Vec::with_capacity(1024);
-    bytes1.resize(bytes1.capacity(), 0u8);
 
-    let file = File::new(&bytes1[..]);
+    let file = File::new(&bytes[..]);
     let (_, shards) = file.shards(0);
 
     let mut enc: Vec<EncodedShard> = shards.into_iter().map(|s| s.pack()).collect();
@@ -45,10 +43,10 @@ fn encode_decode() {
     // generate new encoding / decoding key
     let mut sk = EncodingKey::new();
     let mut pk = sk.decoding();
+    let mut rng = rand::thread_rng();
 
     // generate a random input file
-    let mut rng = rand::thread_rng();
-    let size: usize = rng.gen::<usize>() % 10240;
+    let size = rng.gen::<usize>() % 10240;
     let mut original = Vec::with_capacity(size);
     for _ in 0..size {
         original.push(rng.gen());
@@ -56,7 +54,7 @@ fn encode_decode() {
 
     // create file object and split into shards
     let file = File::new(&original[..]);
-    let expand: usize = rng.gen::<usize>() % 20;
+    let expand = rng.gen::<usize>() % 20;
     let (header, shards) = file.shards(expand);
     assert_eq!(shards.len(), header.shards() + expand);
 
@@ -72,7 +70,8 @@ fn encode_decode() {
     assert_eq!(enc.len(), header.shards() + expand);
 
     // lose the maximum number
-    for _ in 0..expand {
+    let lose = rng.gen::<usize>() % (expand + 1);
+    for _ in 0..lose {
         let idx: usize = rng.gen();
         enc.remove(idx % enc.len());
     }

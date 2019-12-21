@@ -4,7 +4,7 @@ use std::thread;
 const DATA: usize = 1024 * 1024;
 const BLOCK: usize = 1024;
 const WORK: usize = DATA / BLOCK;
-const WORKERS: usize = 4;
+const WORKERS: usize = 8;
 
 pub fn main() {
     let sk = EncodingKey::new();
