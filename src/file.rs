@@ -8,6 +8,7 @@ const FDH_ROUNDS: usize = 3;
 use super::Shard;
 use super::SHARD_SIZE;
 
+/// Full Domain Hashing
 fn fdh(data: Vec<u8>, rounds: usize, reverse: bool) -> Vec<u8> {
     // split into left/right
     let mut left = data;
@@ -20,7 +21,6 @@ fn fdh(data: Vec<u8>, rounds: usize, reverse: bool) -> Vec<u8> {
         for i in 0..right.len() {
             right[i] ^= pad[i];
         }
-
         if r < rounds - 1 {
             mem::swap(&mut left, &mut right);
         }
@@ -33,19 +33,12 @@ fn fdh(data: Vec<u8>, rounds: usize, reverse: bool) -> Vec<u8> {
 
 impl File {
     pub fn new(data: &[u8]) -> File {
+        // save length
+
         let length = data.len();
         let mut data = data.to_owned();
 
-        /*
-        // append randomness
-
-        let mut rand = [0u8; 16];
-
-        rand_bytes(&mut rand).unwrap();
-        data.extend(&rand[..]);
-        */
-
-        // extend to multiple of shard size
+        // pad to multiple of shard size
 
         while data.len() % SHARD_SIZE != 0 {
             data.push(0x0);
@@ -55,6 +48,7 @@ impl File {
         // full-domain hashing
 
         let data = fdh(data, FDH_ROUNDS, false);
+        assert_eq!(data.len() % SHARD_SIZE, 0);
 
         // split into fixed-sized shards
 

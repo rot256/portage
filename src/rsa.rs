@@ -21,6 +21,32 @@ pub struct DecodingKey {
     n: BigNum,
 }
 
+impl Clone for EncodingKey {
+    fn clone(&self) -> Self {
+        Self {
+            ctx: BigNumContext::new().unwrap(),
+            n: self.n.to_owned().unwrap(),
+            d: self.d.to_owned().unwrap(),
+        }
+    }
+}
+
+impl Clone for DecodingKey {
+    fn clone(&self) -> Self {
+        Self {
+            ctx: BigNumContext::new().unwrap(),
+            n: self.n.to_owned().unwrap(),
+        }
+    }
+}
+
+fn block_to_tweak(shard_idx: u16, block_idx: u32) -> [u8; 6] {
+    let mut tweak = [0u8; mem::size_of::<u16>() + mem::size_of::<u32>()];
+    tweak[0..2].copy_from_slice(&shard_idx.to_le_bytes()[..]);
+    tweak[2..6].copy_from_slice(&block_idx.to_le_bytes()[..]);
+    tweak
+}
+
 impl EncodeBlock {
     // rounds of encoding (trapdoor application)
     const ROUNDS: u32 = 2;
@@ -35,6 +61,7 @@ impl EncodeBlock {
         ctx: &mut BigNumContextRef,
         reverse: bool,
         n: &BigNum, // modulus
+        twk: &[u8],
     ) -> Result<(), ErrorStack> {
         // F function
         fn f(
@@ -53,14 +80,24 @@ impl EncodeBlock {
             res.nnmod(&random, n, ctx)
         }
 
+        // halfs
         let mut tmp1 = BigNum::new()?;
         let mut tmp2 = BigNum::new()?;
-        let mut tweak = [0u8; 1];
 
+        // copy over tweak
+        let mut tweak: Vec<u8> = vec![0; twk.len() + 1];
+        tweak[1..].copy_from_slice(twk);
+
+        debug_assert_eq!(tweak[0], 0);
+        debug_assert_eq!(tweak.len(), twk.len() + 1);
         debug_assert_eq!(self.s[0].ucmp(n), Ordering::Less);
         debug_assert_eq!(self.s[1].ucmp(n), Ordering::Less);
 
         for r in 0..Self::FEISTEL {
+            debug_assert!(r < 256);
+
+            // add round number to tweak
+            debug_assert_eq!(&tweak[1..], twk);
             tweak[0] = if reverse { Self::FEISTEL - 1 - r } else { r } as u8;
 
             // P = F(b[0])
@@ -94,19 +131,17 @@ impl EncodeBlock {
     fn round_inv(
         &mut self,
         ctx: &mut BigNumContextRef,
-        n: &BigNum, // modulus
+        n: &BigNum,   // modulus
+        tweak: &[u8], // tweak for "invertable RO"
     ) -> Result<(), ErrorStack> {
         // apply RSA permutation
-
         for i in 0..2 {
             let old = self.s[i].to_owned()?;
             rsa_p(ctx, &mut self.s[i], &old, n)?;
         }
 
         // apply feistel
-
-        self.feistel(ctx, true, n)?;
-
+        self.feistel(ctx, true, n, tweak)?;
         Ok(())
     }
 
@@ -114,12 +149,13 @@ impl EncodeBlock {
     fn round(
         &mut self,
         ctx: &mut BigNumContextRef,
-        n: &BigNum, // modulus
-        t: &BigNum, // trapdoor
+        n: &BigNum,   // modulus
+        t: &BigNum,   // trapdoor
+        tweak: &[u8], // tweak for "invertable RO"
     ) -> Result<(), ErrorStack> {
         // apply feistel
 
-        self.feistel(ctx, false, n)?;
+        self.feistel(ctx, false, n, tweak)?;
 
         // apply trapdoor
 
@@ -134,18 +170,34 @@ impl EncodeBlock {
     pub fn encode(
         &mut self,
         ctx: &mut BigNumContextRef,
-        n: &BigNum,
-        t: &BigNum,
+        n: &BigNum,     // modulus
+        t: &BigNum,     // trapdoor
+        shard_idx: u16, // shard index in codeword
+        block_idx: u32, // block index in shard
     ) -> Result<(), ErrorStack> {
+        // serialize tweak
+        let tweak = block_to_tweak(shard_idx, block_idx);
+
+        // apply rounds of leakage resiliant trapdoor
         for _r in 0..Self::ROUNDS {
-            self.round(ctx, n, t)?;
+            self.round(ctx, n, t, &tweak[..])?;
         }
         Ok(())
     }
 
-    pub fn decode(&mut self, ctx: &mut BigNumContextRef, n: &BigNum) -> Result<(), ErrorStack> {
+    pub fn decode(
+        &mut self,
+        ctx: &mut BigNumContextRef,
+        n: &BigNum,     // modulus
+        shard_idx: u16, // shard index in codeword
+        block_idx: u32, // block index in shard
+    ) -> Result<(), ErrorStack> {
+        // serialize tweak
+        let tweak = block_to_tweak(shard_idx, block_idx);
+
+        // apply rounds of permutation
         for _r in 0..Self::ROUNDS {
-            self.round_inv(ctx, n)?;
+            self.round_inv(ctx, n, &tweak[..])?;
         }
         Ok(())
     }
@@ -199,8 +251,10 @@ impl EncodingKey {
     }
 
     pub fn encode(&mut self, s: &mut EncodedShard) {
-        for block in s.blocks.iter_mut() {
-            block.encode(&mut self.ctx, &self.n, &self.d).unwrap();
+        for (i, block) in s.blocks.iter_mut().enumerate() {
+            block
+                .encode(&mut self.ctx, &self.n, &self.d, s.idx, i as u32)
+                .unwrap();
         }
     }
 
@@ -244,8 +298,10 @@ impl EncodingKey {
 
 impl DecodingKey {
     pub fn decode(&mut self, s: &mut EncodedShard) {
-        for block in s.blocks.iter_mut() {
-            block.decode(&mut self.ctx, &self.n).unwrap();
+        for (i, block) in s.blocks.iter_mut().enumerate() {
+            block
+                .decode(&mut self.ctx, &self.n, s.idx, i as u32)
+                .unwrap();
         }
     }
 

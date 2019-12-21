@@ -17,7 +17,7 @@ use std::mem::MaybeUninit;
 pub use rsa::{DecodingKey, EncodingKey};
 
 // group size
-const PRIME_SIZE: usize = 1023;
+const PRIME_SIZE: usize = 1025;
 const MODULUS_SIZE: usize = 2 * PRIME_SIZE;
 
 // message always slightly smaller to ensure that it is contained
@@ -89,10 +89,14 @@ impl fmt::Debug for Header {
 
 impl Shard {
     pub(crate) fn new(idx: u16, bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), SHARD_SIZE);
+        debug_assert_eq!(bytes.len(), SHARD_ELEMS * 2);
+
         let mut shard = Shard {
             idx,
             coords: [Default::default(); SHARD_ELEMS],
         };
+
         for i in 0..shard.coords.len() {
             shard.coords[i][0] = bytes[i * 2];
             shard.coords[i][1] = bytes[i * 2 + 1];
@@ -153,6 +157,8 @@ impl EncodedShard {
             push(&self.blocks[i].s[0]);
             push(&self.blocks[i].s[1]);
         }
+        debug_assert_eq!(bytes.len() % BLOCK_SIZE, 0);
+        debug_assert_eq!(bytes.len(), SHARD_SIZE);
 
         // pack bytes into GF(2^16) elements
         Shard::new(self.idx, &bytes)

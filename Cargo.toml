@@ -7,3 +7,14 @@ edition = "2018"
 [dependencies]
 openssl = "0.10.25"
 reed-solomon-erasure = "4.0.1"
+
+[dev-dependencies]
+rand = "*"
+
+[lib]
+name = "portage"
+path = "src/lib.rs"
+
+[[bin]]
+name = "portage"
+path = "src/bin.rs"

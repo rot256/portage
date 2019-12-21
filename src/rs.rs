@@ -23,12 +23,12 @@ impl FromIterator<[u8; 2]> for Shard {
     where
         T: IntoIterator<Item = [u8; 2]>,
     {
+        let mut iter = iter.into_iter();
         let mut shard = Shard {
             idx: 0,
             coords: [[0u8; 2]; SHARD_ELEMS],
         };
 
-        let mut iter = iter.into_iter();
         for i in 0..SHARD_ELEMS {
             if let Some(coord) = iter.next() {
                 shard.coords[i] = coord
